@@ -35,7 +35,10 @@ const PIXAZO_KEY = process.env.PIXAZO_KEY || "";
 export const PROMPT_MAX_LENGTH = 4500;
 
 const POLL_INTERVAL_MS = 5000;
-const POLL_TIMEOUT_MS = 4 * 60 * 1000; // 4 phut, giong het script test da chay thanh cong
+// Thoi gian cho toi da truoc khi tu bo (phut). Mac dinh 8 phut - free tier
+// cua Pixazo co the cham hon 4 phut vao gio cao diem. Chinh duoc qua bien
+// moi truong PIXAZO_POLL_TIMEOUT_MINUTES tren Railway neu can cho lau hon.
+const POLL_TIMEOUT_MS = (Number(process.env.PIXAZO_POLL_TIMEOUT_MINUTES) || 8) * 60 * 1000;
 
 // ----- Rate limiter dung chung cho toan bo cac request goi Pixazo -----
 // Sliding window 60 giay: truoc moi request (submit HOAC poll), ham nay
@@ -90,9 +93,14 @@ async function submitJob({ prompt, imageUrl, duration }) {
   await waitForRateLimitSlot();
 
   const body = { prompt, image_url: imageUrl };
-  // Chi gui "duration" khi nguoi dung/co the co gia tri, tranh gui field
-  // rong/undefined len Pixazo (co the bi hieu la 0 hoac loi).
-  if (duration !== undefined && duration !== null && duration !== "") {
+  // QUAN TRONG: mac dinh KHONG gui "duration" len Pixazo. Da xac nhan thuc
+  // te (so sanh voi script test-pixazo-image-to-video.mjs da chay OK) rang
+  // gui them field nay co the khien job bi TREO IM LANG (khong bao gio
+  // chuyen sang COMPLETED/FAILED) thay vi bao loi ro rang, dan den loi
+  // "qua X phut van chua xong". Chi bat gui field nay khi nguoi dung tu
+  // xac nhan muon thu nghiem, qua bien moi truong PIXAZO_SEND_DURATION=true.
+  const shouldSendDuration = process.env.PIXAZO_SEND_DURATION === "true";
+  if (shouldSendDuration && duration !== undefined && duration !== null && duration !== "") {
     body.duration = Number(duration);
   }
 
@@ -156,6 +164,9 @@ async function pollUntilDone(pollingUrl, abortSignal) {
       headers: { "Ocp-Apim-Subscription-Key": PIXAZO_KEY }
     });
     const data = await res.json();
+
+    const elapsedSec = Math.round((Date.now() - (deadline - POLL_TIMEOUT_MS)) / 1000);
+    console.log(`Pixazo poll (${elapsedSec}s): status=${data.status}`);
 
     if (data.status === "COMPLETED") return data;
     if (data.status === "FAILED" || data.status === "ERROR") {
