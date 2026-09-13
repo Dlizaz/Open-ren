@@ -182,6 +182,7 @@ async function processItem(item) {
           const result = await generatePixazoVideo({
             prompt: item.prompt,
             imageUrl: item.imageUrl,
+            duration: item.duration,
             abortSignal: controller.signal,
             onTaskCreated: (pollingUrl) => updateItemStatus(item.id, { pixazoPollingUrl: pollingUrl })
           });
