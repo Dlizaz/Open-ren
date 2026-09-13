@@ -30,14 +30,15 @@ function currentPromptMaxLength() {
 }
 
 // Bat/tat cac truong tuy theo provider dang chon: Pixazo (LTX) chi co 1
-// model duy nhat va khong ho tro duration/upscale rieng (theo dung nhung gi
-// script test da xac nhan hoat dong voi API cua ho).
+// model duy nhat va khong ho tro upscale rieng, nhung DA ho tro duration
+// (gui len field "duration" theo dung format chuan cua LTX - xem ghi chu
+// trong src/pixazo.js). Neu Pixazo khong nhan gia tri nay, loi se hien ra
+// ngay trong bang trang thai (cot Loi) de biet ma bo/dieu chinh.
 function updateProviderUi() {
   const isPixazo = currentProvider() === "pixazo";
 
   modelField.style.display = isPixazo ? "none" : "";
   pixazoModelField.style.display = isPixazo ? "" : "none";
-  durationField.style.display = isPixazo ? "none" : "";
   upscaleField.style.display = isPixazo ? "none" : "";
 
   promptLimitNote.innerHTML = isPixazo
