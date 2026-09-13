@@ -1,0 +1,23 @@
+{
+  "name": "open-ren",
+  "version": "1.0.0",
+  "description": "Web queue: upload CSV + images -> auto generate video via Runway hoặc Pixazo (LTX) -> auto upload Google Drive",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@runwayml/sdk": "^4.20.0",
+    "csv-parse": "^6.0.0",
+    "dotenv": "^16.0.0",
+    "express": "^4.19.2",
+    "googleapis": "^140.0.1",
+    "mongodb": "^6.10.0",
+    "multer": "^1.4.5-lts.1",
+    "p-limit": "^5.0.0"
+  }
+}
