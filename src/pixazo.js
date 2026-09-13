@@ -14,9 +14,19 @@
 //    khong co buoc upscale rieng - vi vay Stop 1 video dang dung Pixazo chi
 //    dung duoc o phia client (ngung poll + bo qua ket qua), khong huy that
 //    duoc job da gui tren server cua Pixazo.
-// 4. Cac tham so nhu duration/ratio KHONG duoc gui len vi test thuc te
-//    (test-pixazo-image-to-video.mjs) chi xac nhan 2 truong "prompt" va
-//    "image_url" hoat dong - tranh doan them tham so ho khong xac nhan.
+// 4. Tham so "ratio" van KHONG duoc gui len vi chua duoc xac nhan. Tham so
+//    "duration" (so giay) DA duoc them theo dung format cua LTX goc (cac
+//    ban trien khai LTX khac - fal.ai, Picsart... - deu dung field ten
+//    "duration", gia tri thuong gap 6/8/10 giay). Gateway cua Pixazo CHUA
+//    co doc chinh thuc cong khai xac nhan dieu nay, nen: neu Pixazo khong
+//    hieu field nay, ho se tra loi 400 (se hien ro trong errorField/message
+//    tren web) hoac im lang bo qua va dung do dai mac dinh cua ho - can
+//    test thuc te sau khi deploy de biet chac.
+// 5. Them RATE LIMITER dung chung cho MOI request goi Pixazo (ca submit lan
+//    poll), gioi han so request/phut de tranh vuot qua han muc 60
+//    request/phut cua Pixazo khi gui hang loat video roi di ngu. Chinh qua
+//    bien moi truong PIXAZO_MAX_REQUESTS_PER_MINUTE (mac dinh 50, de du
+//    khoang trong an toan duoi muc 60 that su cua Pixazo).
 
 const PIXAZO_KEY = process.env.PIXAZO_KEY || "";
 
@@ -26,6 +36,32 @@ export const PROMPT_MAX_LENGTH = 4500;
 
 const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 4 * 60 * 1000; // 4 phut, giong het script test da chay thanh cong
+
+// ----- Rate limiter dung chung cho toan bo cac request goi Pixazo -----
+// Sliding window 60 giay: truoc moi request (submit HOAC poll), ham nay
+// kiem tra so request da goi trong 60 giay gan nhat, neu da toi han thi
+// CHO (khong loi, khong bo qua) den khi co "cho trong" moi goi tiep.
+// Dung chung 1 mang timestamp cho ca app (khong theo tung job rieng), vi
+// gioi han 60 request/phut la gioi han TREN TOAN BO API KEY cua Pixazo,
+// khong phai rieng tung video.
+const MAX_REQUESTS_PER_MINUTE = Number(process.env.PIXAZO_MAX_REQUESTS_PER_MINUTE) || 50;
+const requestTimestamps = [];
+
+async function waitForRateLimitSlot() {
+  while (true) {
+    const now = Date.now();
+    // Bo cac timestamp da qua 60 giay
+    while (requestTimestamps.length && now - requestTimestamps[0] >= 60000) {
+      requestTimestamps.shift();
+    }
+    if (requestTimestamps.length < MAX_REQUESTS_PER_MINUTE) {
+      requestTimestamps.push(now);
+      return;
+    }
+    const waitMs = 60000 - (now - requestTimestamps[0]) + 50; // +50ms cho chac
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+}
 
 function assertConfigured() {
   if (!PIXAZO_KEY) {
@@ -50,14 +86,23 @@ export function describePixazoError(error) {
   };
 }
 
-async function submitJob({ prompt, imageUrl }) {
+async function submitJob({ prompt, imageUrl, duration }) {
+  await waitForRateLimitSlot();
+
+  const body = { prompt, image_url: imageUrl };
+  // Chi gui "duration" khi nguoi dung/co the co gia tri, tranh gui field
+  // rong/undefined len Pixazo (co the bi hieu la 0 hoac loi).
+  if (duration !== undefined && duration !== null && duration !== "") {
+    body.duration = Number(duration);
+  }
+
   const res = await fetch("https://gateway.pixazo.ai/ltx-video/v1/image-to-video", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Ocp-Apim-Subscription-Key": PIXAZO_KEY
     },
-    body: JSON.stringify({ prompt, image_url: imageUrl })
+    body: JSON.stringify(body)
   });
 
   const text = await res.text();
@@ -92,16 +137,21 @@ async function pollUntilDone(pollingUrl, abortSignal) {
     }
 
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(resolve, POLL_INTERVAL_MS);
+      let timer;
       const onAbort = () => {
         clearTimeout(timer);
         const err = new Error("Aborted");
         err.name = "AbortError";
         reject(err);
       };
+      timer = setTimeout(() => {
+        abortSignal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, POLL_INTERVAL_MS);
       abortSignal?.addEventListener("abort", onAbort, { once: true });
     });
 
+    await waitForRateLimitSlot();
     const res = await fetch(pollingUrl, {
       headers: { "Ocp-Apim-Subscription-Key": PIXAZO_KEY }
     });
@@ -122,6 +172,8 @@ async function pollUntilDone(pollingUrl, abortSignal) {
  * Tao video tu anh qua Pixazo/LTX. Bat buoc phai co imageUrl (URL cong khai
  * tren internet) - KHONG ho tro text-to-video.
  *
+ * - duration: so giay video mong muon (vd 6/8/10). Optional - neu khong
+ *   truyen, Pixazo se tu dung do dai mac dinh cua ho.
  * - abortSignal: cho phep huy giua chung (dung khi nguoi dung bam Stop cho
  *   rieng 1 video). Pixazo khong co API huy task tren server cua ho, nen
  *   khi abort, ham nay chi dung poll lai va nem AbortError, GIONG HANH VI
@@ -130,14 +182,14 @@ async function pollUntilDone(pollingUrl, abortSignal) {
  *   luu lai polling_url phong khi can debug (Pixazo khong tra ve 1 taskId
  *   rieng trong response mau, chi co polling_url).
  */
-export async function generatePixazoVideo({ prompt, imageUrl, abortSignal, onTaskCreated }) {
+export async function generatePixazoVideo({ prompt, imageUrl, duration, abortSignal, onTaskCreated }) {
   assertConfigured();
 
   if (!imageUrl) {
     throw new Error("Pixazo (LTX) bắt buộc phải có ảnh đầu vào (chỉ hỗ trợ image-to-video)");
   }
 
-  const submitResult = await submitJob({ prompt, imageUrl });
+  const submitResult = await submitJob({ prompt, imageUrl, duration });
   if (onTaskCreated) onTaskCreated(submitResult.polling_url || null);
 
   let finalResult = submitResult;
