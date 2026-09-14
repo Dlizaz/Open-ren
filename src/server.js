@@ -211,6 +211,17 @@ async function storeImage(buffer, originalName) {
     uploadStream.on("finish", () => resolve(uploadStream.id));
     uploadStream.end(buffer);
   });
+
+  // DEBUG TAM THOI: doc lai ngay lap tuc de kiem tra day co phai loi do
+  // MongoDB replication lag (doc vao secondary chua kip dong bo) hay la
+  // ghi that bai am tham. Se go bo sau khi xac dinh duoc nguyen nhan.
+  const verify = await bucket.find({ _id: fileId }).toArray();
+  console.log(
+    `X storeImage: da luu fileId=${fileId.toString()}, kiem tra doc lai ngay: ${
+      verify.length > 0 ? "THAY (OK)" : "KHONG THAY (loi!)"
+    }`
+  );
+
   return fileId.toString();
 }
 
