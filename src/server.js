@@ -211,8 +211,8 @@ function extToMime(originalName) {
  */
 async function compressForPixazo(buffer) {
   return sharp(buffer)
-    .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality: 85 })
+    .resize({ width: 1024, height: 1024, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 70, mozjpeg: true })
     .toBuffer();
 }
 
