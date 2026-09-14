@@ -15,6 +15,7 @@ import {
   getQueueState
 } from "./queue.js";
 import { loadStatus, getItem, updateItemStatus, getUnfinishedItems, deleteItem } from "./storage.js";
+import sharp from "sharp";
 import { getVideoBucket, getImageBucket, ObjectId } from "./db.js";
 import { PROMPT_MAX_LENGTHS, getPromptMaxLength, normalizeProvider } from "./promptLimits.js";
 const app = express();
@@ -201,25 +202,34 @@ function extToMime(originalName) {
  * ten service/domain sau khi da upload anh, link van luon dung domain moi
  * nhat thay vi bi "dong cung" domain cu tai thoi diem upload.
  */
+/**
+ * Nen/resize anh truoc khi luu, vi anh chup goc (may anh/dien thoai) thuong
+ * vai MB, khien Pixazo tai ve qua GridFS + mang cham hon 20 giay ho cho
+ * phep, gay loi timeout du link hoan toan dung. Pixazo chi can anh du de
+ * tham chieu bo cuc/nhan vat, khong can giu nguyen do phan giai goc, nen
+ * resize xuong toi da 1600px canh dai + nen JPEG chat luong 85 la an toan.
+ */
+async function compressForPixazo(buffer) {
+  return sharp(buffer)
+    .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+}
+
 async function storeImage(buffer, originalName) {
+  const compressed = await compressForPixazo(buffer);
   const bucket = await getImageBucket();
   const fileId = await new Promise((resolve, reject) => {
     const uploadStream = bucket.openUploadStream(originalName, {
-      contentType: extToMime(originalName)
+      contentType: "image/jpeg"
     });
     uploadStream.on("error", reject);
     uploadStream.on("finish", () => resolve(uploadStream.id));
-    uploadStream.end(buffer);
+    uploadStream.end(compressed);
   });
 
-  // DEBUG TAM THOI: doc lai ngay lap tuc de kiem tra day co phai loi do
-  // MongoDB replication lag (doc vao secondary chua kip dong bo) hay la
-  // ghi that bai am tham. Se go bo sau khi xac dinh duoc nguyen nhan.
-  const verify = await bucket.find({ _id: fileId }).toArray();
   console.log(
-    `X storeImage: da luu fileId=${fileId.toString()}, kiem tra doc lai ngay: ${
-      verify.length > 0 ? "THAY (OK)" : "KHONG THAY (loi!)"
-    }`
+    `X storeImage: nen tu ${(buffer.length / 1024).toFixed(0)}KB xuong ${(compressed.length / 1024).toFixed(0)}KB, fileId=${fileId.toString()}`
   );
 
   return fileId.toString();
