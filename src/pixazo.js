@@ -94,6 +94,11 @@ export function describePixazoError(error) {
 async function submitJob({ prompt, imageUrl, duration, sendDuration }) {
   await waitForRateLimitSlot();
 
+  // Log tam thoi de debug loi "image_url must be http:// or https://" - in
+  // ra CHINH XAC chuoi da gui, vi loi nay thuong do URL sai dinh dang chu
+  // khong phai do mang/timeout.
+  console.log(`X submitJob imageUrl = "${imageUrl}"`);
+
   const body = { prompt, image_url: imageUrl };
   // Chi gui "duration" khi NGUOI DUNG TU BAT nut "Gui thoi luong cho
   // Pixazo (thu nghiem)" tren web cho tung lan render (sendDuration=true),
